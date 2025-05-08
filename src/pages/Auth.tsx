@@ -12,6 +12,7 @@ import {
 } from "react-icons/fa";
 import AuthLayout from "@/components/auth/AuthLayout";
 import SubmitButton from "@/components/auth/SubmitButton";
+import { useAuth } from "@/context/AuthContext";
 
 const generateCaptcha = () => {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -21,6 +22,7 @@ const generateCaptcha = () => {
 };
 
 const Auth = () => {
+  const { login, register } = useAuth();
   const [loginTab, setLoginTab] = useState<"user" | "doctor" | "admin">("user");
   const [loginMethod, setLoginMethod] = useState<"email" | "phone">("email");
   const [form, setForm] = useState({
@@ -33,6 +35,7 @@ const Auth = () => {
   const [captcha, setCaptcha] = useState(generateCaptcha());
   const [captchaInput, setCaptchaInput] = useState("");
   const [captchaVerified, setCaptchaVerified] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -45,35 +48,53 @@ const Auth = () => {
   };
 
   const handleCaptchaVerify = () => {
-    setCaptchaVerified(captchaInput.trim() === captcha.trim()); // Case-sensitive
+    setCaptchaVerified(captchaInput.trim() === captcha.trim());
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!captchaVerified) return alert("Please verify the captcha!");
+    if (!captchaVerified) {
+      alert("Please verify the captcha!");
+      return;
+    }
 
-    const role = loginTab;
-    const userName =
-      form.name ||
-      (loginMethod === "email"
-        ? form.email.split("@")[0]
-        : form.phone);
+    setIsLoading(true);
+    try {
+      const userData = {
+        name: form.name,
+        role: loginTab,
+        phone: form.phone,
+        email: form.email,
+      };
 
-    localStorage.setItem("isAuthenticated", "true");
-    localStorage.setItem("userRole", role);
-    localStorage.setItem("userName", userName);
-
-    window.dispatchEvent(new Event("authChange"));
-
-    navigate("/");
+      if (loginMethod === "email") {
+        if (window.location.search.includes("mode=login")) {
+          await login(form.email, form.password);
+        } else {
+          await register(form.email, form.password, userData);
+        }
+      } else {
+        // Phone authentication would be implemented here
+        // For now, we'll show an alert
+        alert("Phone authentication is not implemented yet");
+      }
+    } catch (error) {
+      console.error("Authentication error:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <AuthLayout>
       <div className="flex flex-col items-center mb-6">
-        <h2 className="text-2xl font-bold mb-1">Welcome Back</h2>
+        <h2 className="text-2xl font-bold mb-1">
+          {window.location.search.includes("mode=login") ? "Welcome Back" : "Create Account"}
+        </h2>
         <p className="text-gray-600 mb-2">
-          Sign in to continue to your account
+          {window.location.search.includes("mode=login")
+            ? "Sign in to continue to your account"
+            : "Fill in your details to get started"}
         </p>
       </div>
 
@@ -113,28 +134,28 @@ const Auth = () => {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* User Name */}
-        <div>
-          <label className="block text-gray-700 mb-2 text-sm font-medium">
-            User Name
-          </label>
-          <div className="relative">
-            <span className="absolute left-3 top-3 text-gray-400">
-              <FaUser />
-            </span>
-            <input
-              name="name"
-              type="text"
-              value={form.name}
-              onChange={handleChange}
-              className="w-full pl-10 pr-4 py-2 border rounded-md focus:ring-2 focus:ring-sociodent-500"
-              placeholder="Enter your name"
-              required
-            />
+        {!window.location.search.includes("mode=login") && (
+          <div>
+            <label className="block text-gray-700 mb-2 text-sm font-medium">
+              Full Name
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-3 text-gray-400">
+                <FaUser />
+              </span>
+              <input
+                name="name"
+                type="text"
+                value={form.name}
+                onChange={handleChange}
+                className="w-full pl-10 pr-4 py-2 border rounded-md focus:ring-2 focus:ring-sociodent-500"
+                placeholder="Enter your name"
+                required
+              />
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Email */}
         {loginMethod === "email" && (
           <div>
             <label className="block text-gray-700 mb-2 text-sm font-medium">
@@ -157,7 +178,6 @@ const Auth = () => {
           </div>
         )}
 
-        {/* Phone */}
         {loginMethod === "phone" && (
           <div>
             <label className="block text-gray-700 mb-2 text-sm font-medium">
@@ -180,15 +200,16 @@ const Auth = () => {
           </div>
         )}
 
-        {/* Password */}
         <div>
           <div className="flex justify-between items-center mb-1">
             <label className="block text-gray-700 text-sm font-medium">
               Password
             </label>
-            <a href="#" className="text-sociodent-500 text-xs hover:underline">
-              Forgot password?
-            </a>
+            {window.location.search.includes("mode=login") && (
+              <a href="#" className="text-sociodent-500 text-xs hover:underline">
+                Forgot password?
+              </a>
+            )}
           </div>
           <div className="relative">
             <input
@@ -209,7 +230,6 @@ const Auth = () => {
           </div>
         </div>
 
-        {/* CAPTCHA */}
         <div className="bg-gray-50 border rounded-md p-3">
           <label className="block text-gray-700 mb-1 text-sm font-medium">
             Verify you're human
@@ -253,6 +273,7 @@ const Auth = () => {
 
         <SubmitButton
           type="submit"
+          disabled={isLoading}
           className={`w-full py-3 mt-2 rounded-full text-white font-bold text-lg ${
             loginTab === "user"
               ? "bg-red-400 hover:bg-red-500"
@@ -261,7 +282,10 @@ const Auth = () => {
               : "bg-gray-700 hover:bg-gray-800"
           } transition`}
         >
-          Sign In as {loginTab.charAt(0).toUpperCase() + loginTab.slice(1)}
+          {isLoading ? "Processing..." : 
+            window.location.search.includes("mode=login")
+              ? `Sign In as ${loginTab.charAt(0).toUpperCase() + loginTab.slice(1)}`
+              : `Create ${loginTab.charAt(0).toUpperCase() + loginTab.slice(1)} Account`}
         </SubmitButton>
       </form>
     </AuthLayout>

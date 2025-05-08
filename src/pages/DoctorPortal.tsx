@@ -3,160 +3,320 @@ import { useNavigate } from 'react-router-dom';
 import { Calendar, Users, MessageSquare, FileText, Settings, ClipboardList } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/context/AuthContext';
+import { db } from '../backend/config/firebase';
+import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
+
+interface Appointment {
+  id: string;
+  patientName: string;
+  patientEmail: string;
+  date: string;
+  time: string;
+  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  notes?: string;
+}
+
+interface DoctorProfile {
+  id: string;
+  name: string;
+  email: string;
+  specialization: string;
+  experience: string;
+  bio: string;
+  status: string;
+  documents: {
+    license?: string;
+    certificate?: string;
+    id?: string;
+  };
+}
 
 const DoctorPortal = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userRole, setUserRole] = useState('');
-  const [activeTab, setActiveTab] = useState('appointments');
+  const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState('appointments');
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [profile, setProfile] = useState<DoctorProfile | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Check authentication and role
   useEffect(() => {
-    const authStatus = localStorage.getItem('isAuthenticated') === 'true';
-    const role = localStorage.getItem('userRole') || '';
-    setIsAuthenticated(authStatus);
-    setUserRole(role);
-    if (!authStatus || role !== 'doctor') {
+    if (!user) {
+      navigate('/auth?mode=login');
       toast({
-        title: "Access Denied",
-        description: "You must be logged in as a doctor to access this page",
+        title: "Authentication Required",
+        description: "Please log in as a doctor to access this page",
         variant: "destructive"
       });
-      navigate('/auth?mode=login&role=doctor', { replace: true });
+      return;
     }
-  }, [navigate, toast]);
 
-  if (!isAuthenticated || userRole !== 'doctor') {
-    return null;
+    const fetchData = async () => {
+      try {
+        // Fetch doctor profile
+        const doctorsRef = collection(db, 'doctors');
+        const q = query(doctorsRef, where('email', '==', user.email));
+        const doctorSnapshot = await getDocs(q);
+        
+        if (!doctorSnapshot.empty) {
+          const doctorData = {
+            id: doctorSnapshot.docs[0].id,
+            ...doctorSnapshot.docs[0].data()
+          } as DoctorProfile;
+          setProfile(doctorData);
+
+          // Fetch appointments for this doctor
+          const appointmentsRef = collection(db, 'appointments');
+          const appointmentsQuery = query(appointmentsRef, where('doctorId', '==', doctorData.id));
+          const appointmentsSnapshot = await getDocs(appointmentsQuery);
+          
+          const appointmentsData = appointmentsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          } as Appointment));
+          setAppointments(appointmentsData);
+        }
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load doctor data",
+          variant: "destructive"
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [user, navigate, toast]);
+
+  const handleAppointmentStatus = async (appointmentId: string, status: Appointment['status']) => {
+    try {
+      const appointmentRef = doc(db, 'appointments', appointmentId);
+      await updateDoc(appointmentRef, { status });
+      
+      setAppointments(prev => prev.map(apt => 
+        apt.id === appointmentId ? { ...apt, status } : apt
+      ));
+
+      toast({
+        title: "Success",
+        description: `Appointment ${status} successfully`,
+      });
+    } catch (error) {
+      console.error('Error updating appointment:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update appointment status",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const updateProfile = async (updates: Partial<DoctorProfile>) => {
+    if (!profile) return;
+
+    try {
+      const doctorRef = doc(db, 'doctors', profile.id);
+      await updateDoc(doctorRef, updates);
+      setProfile(prev => prev ? { ...prev, ...updates } : null);
+      
+      toast({
+        title: "Success",
+        description: "Profile updated successfully",
+      });
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update profile",
+        variant: "destructive"
+      });
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sociodent-600"></div>
+      </div>
+    );
   }
 
-  const tabs = [
-    { id: 'appointments', name: 'Appointments', icon: <Calendar className="w-5 h-5 mr-2" /> },
-    { id: 'patients', name: 'My Patients', icon: <Users className="w-5 h-5 mr-2" /> },
-    { id: 'consultations', name: 'Virtual Consultations', icon: <MessageSquare className="w-5 h-5 mr-2" /> },
-    { id: 'prescriptions', name: 'Prescriptions', icon: <FileText className="w-5 h-5 mr-2" /> },
-    { id: 'records', name: 'Patient Records', icon: <ClipboardList className="w-5 h-5 mr-2" /> },
-    { id: 'settings', name: 'Profile Settings', icon: <Settings className="w-5 h-5 mr-2" /> }
-  ];
-
-  // Mock data
-  const appointments = [
-    { id: 1, patient: 'Sarah Johnson', time: '9:00 AM', date: 'Today', type: 'Check-up', status: 'confirmed' },
-    { id: 2, patient: 'Michael Chen', time: '10:30 AM', date: 'Today', type: 'Root Canal', status: 'confirmed' },
-    { id: 3, patient: 'Emily Rodriguez', time: '1:00 PM', date: 'Today', type: 'Consultation', status: 'confirmed' },
-    { id: 4, patient: 'David Wilson', time: '3:30 PM', date: 'Today', type: 'Cleaning', status: 'confirmed' },
-    { id: 5, patient: 'Lisa Thompson', time: '9:30 AM', date: 'Tomorrow', type: 'Check-up', status: 'confirmed' }
-  ];
+  if (!profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Profile Not Found</h1>
+          <p className="text-gray-600">Please contact support if you think this is an error.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
-      <main className="flex-grow pt-12">
-        <div className="container-custom py-8">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">Doctor Portal</h1>
-            <p className="text-gray-600">Manage your appointments, patients, and consultations</p>
-          </div>
-          <div className="flex flex-col lg:flex-row gap-6">
-            {/* Sidebar */}
-            <div className="lg:w-64 bg-white rounded-xl shadow-sm p-4">
-              <nav className="space-y-1">
-                {tabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    className={cn(
-                      "w-full flex items-center px-4 py-3 rounded-lg transition-colors",
-                      activeTab === tab.id 
-                        ? "bg-sociodent-100 text-sociodent-700" 
-                        : "text-gray-700 hover:bg-gray-100"
-                    )}
-                    onClick={() => setActiveTab(tab.id)}
-                  >
-                    {tab.icon}
-                    <span>{tab.name}</span>
-                  </button>
-                ))}
-              </nav>
-            </div>
-            {/* Main Content */}
-            <div className="flex-1 bg-white rounded-xl shadow-sm p-6">
-              {activeTab === 'appointments' && (
-                <div>
-                  <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-semibold">Today's Appointments</h2>
-                    <button className="button-primary py-2">+ Add Appointment</button>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-gray-50">
-                          <th className="px-4 py-3 text-left font-medium text-gray-700">Patient</th>
-                          <th className="px-4 py-3 text-left font-medium text-gray-700">Time</th>
-                          <th className="px-4 py-3 text-left font-medium text-gray-700">Date</th>
-                          <th className="px-4 py-3 text-left font-medium text-gray-700">Type</th>
-                          <th className="px-4 py-3 text-left font-medium text-gray-700">Status</th>
-                          <th className="px-4 py-3 text-left font-medium text-gray-700">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {appointments.map((appointment) => (
-                          <tr key={appointment.id} className="border-b">
-                            <td className="px-4 py-4">{appointment.patient}</td>
-                            <td className="px-4 py-4">{appointment.time}</td>
-                            <td className="px-4 py-4">{appointment.date}</td>
-                            <td className="px-4 py-4">{appointment.type}</td>
-                            <td className="px-4 py-4">
-                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
-                                {appointment.status}
-                              </span>
-                            </td>
-                            <td className="px-4 py-4">
-                              <div className="flex space-x-2">
-                                <button className="text-sociodent-600 hover:text-sociodent-700">View</button>
-                                <button className="text-gray-600 hover:text-gray-700">Edit</button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-              {activeTab === 'patients' && (
-                <div>
-                  <h2 className="text-xl font-semibold mb-6">My Patients</h2>
-                  <p className="text-gray-600">View and manage your patient list.</p>
-                </div>
-              )}
-              {activeTab === 'consultations' && (
-                <div>
-                  <h2 className="text-xl font-semibold mb-6">Virtual Consultations</h2>
-                  <p className="text-gray-600">Manage your upcoming virtual appointments.</p>
-                </div>
-              )}
-              {activeTab === 'prescriptions' && (
-                <div>
-                  <h2 className="text-xl font-semibold mb-6">Prescriptions</h2>
-                  <p className="text-gray-600">Create and manage patient prescriptions.</p>
-                </div>
-              )}
-              {activeTab === 'records' && (
-                <div>
-                  <h2 className="text-xl font-semibold mb-6">Patient Records</h2>
-                  <p className="text-gray-600">Access and update patient medical records.</p>
-                </div>
-              )}
-              {activeTab === 'settings' && (
-                <div>
-                  <h2 className="text-xl font-semibold mb-6">Profile Settings</h2>
-                  <p className="text-gray-600">Update your profile information and preferences.</p>
-                </div>
-              )}
-            </div>
+    <div className="min-h-screen bg-gray-50">
+      <div className="flex">
+        {/* Sidebar */}
+        <div className="w-64 bg-white shadow-sm min-h-screen p-4">
+          <div className="space-y-4">
+            {[
+              { id: 'appointments', name: 'Appointments', icon: <Calendar className="w-5 h-5 mr-2" /> },
+              { id: 'patients', name: 'Patients', icon: <Users className="w-5 h-5 mr-2" /> },
+              { id: 'messages', name: 'Messages', icon: <MessageSquare className="w-5 h-5 mr-2" /> },
+              { id: 'documents', name: 'Documents', icon: <FileText className="w-5 h-5 mr-2" /> },
+              { id: 'settings', name: 'Settings', icon: <Settings className="w-5 h-5 mr-2" /> },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                className={cn(
+                  "flex items-center w-full px-4 py-2 rounded-lg text-left",
+                  activeTab === tab.id
+                    ? "bg-sociodent-50 text-sociodent-700"
+                    : "text-gray-600 hover:bg-gray-50"
+                )}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                {tab.icon}
+                {tab.name}
+              </button>
+            ))}
           </div>
         </div>
-      </main>
+
+        {/* Main Content */}
+        <div className="flex-1 p-8">
+          {activeTab === 'appointments' && (
+            <div>
+              <h1 className="text-2xl font-bold mb-6">Appointments</h1>
+              <div className="bg-white rounded-xl shadow-sm p-6">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50">
+                        <th className="px-4 py-3 text-left font-medium text-gray-700">Patient</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-700">Date</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-700">Time</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-700">Status</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-700">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {appointments.map((appointment) => (
+                        <tr key={appointment.id}>
+                          <td className="px-4 py-3">
+                            <div>
+                              <div className="font-medium">{appointment.patientName}</div>
+                              <div className="text-sm text-gray-500">{appointment.patientEmail}</div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">{appointment.date}</td>
+                          <td className="px-4 py-3">{appointment.time}</td>
+                          <td className="px-4 py-3">
+                            <span className={cn(
+                              "px-2 py-1 rounded-full text-xs",
+                              appointment.status === 'confirmed' ? "bg-green-100 text-green-800" :
+                              appointment.status === 'completed' ? "bg-blue-100 text-blue-800" :
+                              appointment.status === 'cancelled' ? "bg-red-100 text-red-800" :
+                              "bg-yellow-100 text-yellow-800"
+                            )}>
+                              {appointment.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            {appointment.status === 'pending' && (
+                              <div className="flex space-x-2">
+                                <button
+                                  onClick={() => handleAppointmentStatus(appointment.id, 'confirmed')}
+                                  className="text-green-600 hover:text-green-800"
+                                >
+                                  Confirm
+                                </button>
+                                <button
+                                  onClick={() => handleAppointmentStatus(appointment.id, 'cancelled')}
+                                  className="text-red-600 hover:text-red-800"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            )}
+                            {appointment.status === 'confirmed' && (
+                              <button
+                                onClick={() => handleAppointmentStatus(appointment.id, 'completed')}
+                                className="text-blue-600 hover:text-blue-800"
+                              >
+                                Mark Complete
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'settings' && (
+            <div>
+              <h1 className="text-2xl font-bold mb-6">Profile Settings</h1>
+              <div className="bg-white rounded-xl shadow-sm p-6">
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Full Name
+                    </label>
+                    <input
+                      type="text"
+                      value={profile.name}
+                      onChange={(e) => updateProfile({ name: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-md"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Specialization
+                    </label>
+                    <input
+                      type="text"
+                      value={profile.specialization}
+                      onChange={(e) => updateProfile({ specialization: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-md"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Experience
+                    </label>
+                    <input
+                      type="text"
+                      value={profile.experience}
+                      onChange={(e) => updateProfile({ experience: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-md"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Bio
+                    </label>
+                    <textarea
+                      value={profile.bio}
+                      onChange={(e) => updateProfile({ bio: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-md"
+                      rows={4}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Additional tabs (patients, messages, documents) can be added here */}
+        </div>
+      </div>
     </div>
   );
 };

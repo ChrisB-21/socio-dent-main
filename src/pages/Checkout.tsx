@@ -8,6 +8,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/context/AuthContext';
+import { db } from '../backend/config/firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { loadRazorpayScript, createRazorpayOrder, initializeRazorpayPayment } from '@/lib/razorpay';
 
 const RAZORPAY_KEY = import.meta.env.VITE_RAZORPAY_KEY_ID || 'your_razorpay_key_id';
@@ -46,37 +49,89 @@ const paymentMethods = [
 ];
 
 const Checkout = () => {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('razorpay');
   
   // Customer details
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [name, setName] = useState(user?.displayName || '');
+  const [email, setEmail] = useState(user?.email || '');
   const [phone, setPhone] = useState(localStorage.getItem('lastUsedPhone') || '');
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
   const [zipCode, setZipCode] = useState('');
   const [notes, setNotes] = useState('');
   
-  // Payment information
-  const [cardNumber, setCardNumber] = useState('');
-  const [cardExpiry, setCardExpiry] = useState('');
-  const [cardCvv, setCvv] = useState('');
-  const [upiId, setUpiId] = useState('');
-  
+  // Payment processing state
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [orderId, setOrderId] = useState<string>('');
   
   useEffect(() => {
     // Load Razorpay script when component mounts
     loadRazorpayScript();
-  }, []);
 
-  // Calculate subtotal
+    // Auto-fill user details if available
+    if (user) {
+      setName(user.displayName || '');
+      setEmail(user.email || '');
+    }
+  }, [user]);
+
+  // Calculate totals
   const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const shipping = subtotal > 50 ? 0 : 5.99;
   const total = subtotal + shipping;
+
+  const createOrder = async (paymentDetails?: any) => {
+    if (!user) {
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to complete your order",
+        variant: "destructive"
+      });
+      navigate('/auth?mode=login');
+      return;
+    }
+
+    try {
+      const orderData = {
+        userId: user.uid,
+        userDetails: {
+          name,
+          email,
+          phone,
+          address,
+          city,
+          zipCode,
+        },
+        items: cartItems,
+        payment: {
+          method: paymentMethod,
+          details: paymentDetails,
+          status: paymentMethod === 'cash' ? 'pending' : 'completed',
+        },
+        status: 'pending',
+        subtotal,
+        shipping,
+        total,
+        notes,
+        createdAt: serverTimestamp(),
+      };
+
+      const orderRef = await addDoc(collection(db, 'orders'), orderData);
+      setOrderId(orderRef.id);
+      
+      // Clear cart here (implement according to your cart management system)
+      // clearCart();
+      
+      return orderRef.id;
+    } catch (error) {
+      console.error('Error creating order:', error);
+      throw error;
+    }
+  };
   
   const handleRazorpayPayment = async () => {
     try {
@@ -84,11 +139,9 @@ const Checkout = () => {
       
       // Convert USD to INR (approximate conversion) and convert to paise
       const amountInINR = Math.round(total * 83 * 100); // 1 USD = ~83 INR
-      console.log('Creating order with amount:', amountInINR);
       
       // Create order on your backend
       const orderData = await createRazorpayOrder(amountInINR);
-      console.log('Order created:', orderData);
       
       // Initialize Razorpay payment
       const paymentData = await initializeRazorpayPayment({
@@ -111,14 +164,17 @@ const Checkout = () => {
           color: "#0F766E",
         },
       });
-      
-      // Payment successful
-      console.log("Payment successful:", paymentData);
+
+      // Create order in Firestore with payment details
+      await createOrder({
+        razorpayOrderId: orderData.id,
+        razorpayPaymentId: paymentData.razorpay_payment_id,
+        razorpaySignature: paymentData.razorpay_signature,
+      });
+
       setStep(3);
-      
     } catch (error: any) {
       console.error("Payment failed:", error);
-      console.error("Error details:", error.message);
       toast({
         title: "Payment Failed",
         description: error.message || "There was an error processing your payment. Please try again.",
@@ -129,7 +185,7 @@ const Checkout = () => {
     }
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (step === 1) {
       // Validate shipping details
       if (!name || !email || !phone || !address || !city || !zipCode) {
@@ -143,18 +199,26 @@ const Checkout = () => {
       
       // Save phone for future use
       localStorage.setItem('lastUsedPhone', phone);
-      
       setStep(2);
     } else if (step === 2) {
       if (paymentMethod === 'razorpay') {
         handleRazorpayPayment();
-        return;
+      } else {
+        // Create order for cash on delivery
+        try {
+          await createOrder();
+          setStep(3);
+        } catch (error) {
+          toast({
+            title: "Error",
+            description: "Failed to create order. Please try again.",
+            variant: "destructive"
+          });
+        }
       }
-      // For cash on delivery, proceed directly
-      setStep(3);
     } else {
-      // Go to homepage
-      navigate('/');
+      // Order completed, go to orders page
+      navigate('/dashboard');
       toast({
         title: "Success!",
         description: "Your order has been placed successfully.",
@@ -362,7 +426,7 @@ const Checkout = () => {
                           <h3 className="font-medium mb-3">Order Details</h3>
                           <div className="grid grid-cols-2 gap-y-2 text-sm">
                             <div className="text-gray-600">Order ID:</div>
-                            <div className="font-medium">#SD{Math.floor(100000 + Math.random() * 900000)}</div>
+                            <div className="font-medium">#{orderId}</div>
                             
                             <div className="text-gray-600">Date:</div>
                             <div className="font-medium">{new Date().toLocaleDateString()}</div>

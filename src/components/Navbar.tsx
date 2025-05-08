@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import {
-  Menu, X, ShoppingCart, User, UserCog, LogOut,
-  UserCircle, Package, BadgeHelp
+  Menu, X, ShoppingCart, UserCircle, LogOut
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/context/AuthContext";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -15,181 +15,178 @@ import {
 } from "@/components/ui/sheet";
 
 const Navbar = () => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userRole, setUserRole] = useState('');
-  const [scrolled, setScrolled] = useState(false);
-
+  const [isOpen, setIsOpen] = React.useState(false);
+  const [scrolled, setScrolled] = React.useState(false);
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
 
-  const userName = localStorage.getItem('userName') || 'User';
-
-  useEffect(() => {
-    const checkAuth = () => {
-      const auth = localStorage.getItem('isAuthenticated') === 'true';
-      const role = localStorage.getItem('userRole') || 'user';
-      setIsAuthenticated(auth);
-      setUserRole(role);
-    };
-
-    checkAuth();
-    window.addEventListener('authChange', checkAuth);
-    return () => {
-      window.removeEventListener('authChange', checkAuth);
-    };
-  }, []);
-
-  useEffect(() => {
+  React.useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 10);
     window.addEventListener('scroll', onScroll);
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  const handleLogout = () => {
-    localStorage.clear();
-    setIsAuthenticated(false);
-    setUserRole('');
-    window.dispatchEvent(new Event('authChange'));
-    toast({ title: "Logged Out", description: "You have been logged out successfully" });
-    navigate('/auth?mode=login');
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/auth?mode=login');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
 
   const commonLinks = [
     { name: 'Home', path: '/' },
     { name: 'Products', path: '/marketplace' },
-    { name: 'About Us', path: '/about' },
+    { name: 'Doctors', path: '/doctors' },
+    { name: 'About', path: '/about' },
   ];
 
-  const userLinks = [{ name: 'Find Dentist', path: '/consultation' }];
-  const doctorLinks = [{ name: 'My Appointments', path: '/doctor-portal' }];
-  const adminLinks = [{ name: 'Dashboard', path: '/admin-portal' }];
-
-  let activeLinks = [...commonLinks];
-  if (isAuthenticated) {
-    if (userRole === 'doctor') activeLinks.splice(1, 0, ...doctorLinks);
-    else if (userRole === 'admin') activeLinks.unshift(...adminLinks);
-    else activeLinks.splice(1, 0, ...userLinks);
-  }
+  const authLinks = user ? [
+    {
+      name: 'Dashboard',
+      path: user.role === 'admin' ? '/admin-portal' : 
+            user.role === 'doctor' ? '/doctor-portal' : 
+            '/dashboard'
+    },
+    { name: 'Profile', path: '/profile' },
+  ] : [];
 
   return (
-    <header className={cn(
-      "fixed top-0 left-0 right-0 z-50 backdrop-blur-md transition-all duration-300 shadow-sm",
-      scrolled || isOpen ? "bg-white/80 py-4" : "bg-transparent py-6"
+    <nav className={cn(
+      "fixed top-0 w-full z-50 transition-all duration-300",
+      scrolled ? "bg-white shadow-md" : "bg-transparent"
     )}>
-      <div className="container-custom flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-2 text-3xl font-bold no-underline">
-          <img src="/logo.png" alt="SocioDent Logo" className="h-14 w-auto object-contain" />
-        </Link>
-
-        {/* Desktop Nav */}
-        <nav className="hidden lg:flex items-center gap-10">
-          {activeLinks.map(link => (
-            <Link
-              key={link.name}
-              to={link.path}
-              className={cn(
-                "text-base font-medium no-underline transition-colors hover:text-black",
-                location.pathname === link.path ? "text-[#0e5d9f]" : "text-gray-700"
-              )}
-            >
-              {link.name}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between h-16">
+          {/* Logo */}
+          <div className="flex-shrink-0 flex items-center">
+            <Link to="/" className="text-2xl font-bold text-sociodent-600">
+              SocioDent
             </Link>
-          ))}
-        </nav>
+          </div>
 
-        {/* Desktop Actions */}
-        <div className="hidden lg:flex items-center gap-4">
-          {isAuthenticated ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-2 p-2 text-gray-700 hover:text-black">
-                  <UserCircle size={20} />
-                  <span className="text-sm font-medium">{userName}</span>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {userRole === 'user' && (
-                  <>
-                    <DropdownMenuItem onClick={() => navigate('/dashboard')}>
-                      <User className="mr-2 h-4 w-4" /> My Profile
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => navigate('/dashboard?tab=orders')}>
-                      <Package className="mr-2 h-4 w-4" /> My Orders
-                    </DropdownMenuItem>
-                  </>
+          {/* Desktop Navigation */}
+          <div className="hidden md:flex md:items-center md:space-x-8">
+            {commonLinks.map((link) => (
+              <Link
+                key={link.path}
+                to={link.path}
+                className={cn(
+                  "text-gray-600 hover:text-sociodent-600 px-3 py-2 rounded-md text-sm font-medium",
+                  location.pathname === link.path && "text-sociodent-600"
                 )}
-                {userRole === 'doctor' && (
-                  <DropdownMenuItem onClick={() => navigate('/doctor-portal')}>
-                    <BadgeHelp className="mr-2 h-4 w-4" /> Doctor Portal
-                  </DropdownMenuItem>
-                )}
-                {userRole === 'admin' && (
-                  <DropdownMenuItem onClick={() => navigate('/admin-portal')}>
-                    <UserCog className="mr-2 h-4 w-4" /> Admin Portal
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout}>
-                  <LogOut className="mr-2 h-4 w-4" /> Log out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            <>
-              <Link to="/auth?mode=login" className="button-text">Log in</Link>
-              <Link to="/signup" className="button-primary py-2">Sign up</Link>
-            </>
-          )}
-        </div>
+              >
+                {link.name}
+              </Link>
+            ))}
+          </div>
 
-        {/* Mobile Toggle */}
-        <Sheet open={isOpen} onOpenChange={setIsOpen}>
-          <SheetTrigger asChild>
-            <button className="lg:hidden text-gray-700 hover:text-black">
-              {isOpen ? <X size={24} /> : <Menu size={24} />}
-            </button>
-          </SheetTrigger>
-          <SheetContent side="right">
-            <SheetHeader>
-              <SheetTitle className="text-lg font-semibold">Menu</SheetTitle>
-            </SheetHeader>
-            <div className="flex flex-col gap-4 mt-6">
-              {activeLinks.map(link => (
-                <Link
-                  key={link.name}
-                  to={link.path}
-                  onClick={() => setIsOpen(false)}
-                  className={cn(
-                    "text-base font-medium",
-                    location.pathname === link.path ? "text-[#0e5d9f]" : "text-gray-700"
-                  )}
-                >
-                  {link.name}
+          {/* Desktop Auth Section */}
+          <div className="hidden md:flex md:items-center md:space-x-4">
+            {user ? (
+              <>
+                <Link to="/marketplace/cart" className="text-gray-600 hover:text-sociodent-600">
+                  <ShoppingCart className="w-6 h-6" />
                 </Link>
-              ))}
-              {isAuthenticated ? (
-                <button
-                  onClick={() => {
-                    handleLogout();
-                    setIsOpen(false);
-                  }}
-                  className="text-red-600 mt-4"
-                >
-                  Log Out
+                <DropdownMenu>
+                  <DropdownMenuTrigger className="flex items-center space-x-2">
+                    <UserCircle className="w-8 h-8 text-sociodent-600" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {authLinks.map((link) => (
+                      <DropdownMenuItem key={link.path} asChild>
+                        <Link to={link.path}>{link.name}</Link>
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={handleLogout} className="text-red-600">
+                      <LogOut className="w-4 h-4 mr-2" />
+                      Sign Out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
+            ) : (
+              <Link
+                to="/auth?mode=login"
+                className="bg-sociodent-600 text-white px-4 py-2 rounded-md text-sm font-medium"
+              >
+                Sign In
+              </Link>
+            )}
+          </div>
+
+          {/* Mobile menu button */}
+          <div className="md:hidden flex items-center">
+            <Sheet open={isOpen} onOpenChange={setIsOpen}>
+              <SheetTrigger asChild>
+                <button className="text-gray-600">
+                  {isOpen ? (
+                    <X className="w-6 h-6" />
+                  ) : (
+                    <Menu className="w-6 h-6" />
+                  )}
                 </button>
-              ) : (
-                <>
-                  <Link to="/auth?mode=login" onClick={() => setIsOpen(false)}>Login</Link>
-                  <Link to="/signup" onClick={() => setIsOpen(false)}>Signup</Link>
-                </>
-              )}
-            </div>
-          </SheetContent>
-        </Sheet>
+              </SheetTrigger>
+              <SheetContent side="right">
+                <SheetHeader>
+                  <SheetTitle>Menu</SheetTitle>
+                </SheetHeader>
+                <div className="mt-6 flex flex-col space-y-4">
+                  {commonLinks.map((link) => (
+                    <Link
+                      key={link.path}
+                      to={link.path}
+                      className={cn(
+                        "text-gray-600 hover:text-sociodent-600 px-3 py-2 rounded-md text-sm font-medium",
+                        location.pathname === link.path && "text-sociodent-600"
+                      )}
+                      onClick={() => setIsOpen(false)}
+                    >
+                      {link.name}
+                    </Link>
+                  ))}
+                  {user ? (
+                    <>
+                      {authLinks.map((link) => (
+                        <Link
+                          key={link.path}
+                          to={link.path}
+                          className="text-gray-600 hover:text-sociodent-600 px-3 py-2 rounded-md text-sm font-medium"
+                          onClick={() => setIsOpen(false)}
+                        >
+                          {link.name}
+                        </Link>
+                      ))}
+                      <button
+                        onClick={() => {
+                          handleLogout();
+                          setIsOpen(false);
+                        }}
+                        className="text-red-600 hover:text-red-700 px-3 py-2 rounded-md text-sm font-medium"
+                      >
+                        Sign Out
+                      </button>
+                    </>
+                  ) : (
+                    <Link
+                      to="/auth?mode=login"
+                      className="bg-sociodent-600 text-white px-4 py-2 rounded-md text-sm font-medium text-center"
+                      onClick={() => setIsOpen(false)}
+                    >
+                      Sign In
+                    </Link>
+                  )}
+                </div>
+              </SheetContent>
+            </Sheet>
+          </div>
+        </div>
       </div>
-    </header>
+    </nav>
   );
 };
 
