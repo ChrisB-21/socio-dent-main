@@ -1,6 +1,13 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
-import { auth, loginUser, logoutUser, registerUser } from "../backend/config/firebase";
-import { User } from "firebase/auth";
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from "react";
+import { 
+  User,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged
+} from "firebase/auth";
+import { auth, db } from "../backend/config/firebase";
+import { doc, setDoc } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 
@@ -25,77 +32,79 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   useEffect(() => {
-    // Listen for auth state changes
-    const unsubscribe = auth.onAuthStateChanged((user) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
       setLoading(false);
     });
 
-    // Cleanup subscription
-    return unsubscribe;
+    return () => unsubscribe();
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string) => {
     try {
-      const user = await loginUser(email, password);
+      await signInWithEmailAndPassword(auth, email, password);
+      navigate('/dashboard');
+    } catch (error) {
       toast({
-        title: "Login Successful",
-        description: "Welcome back!",
-      });
-      navigate("/dashboard");
-    } catch (error: any) {
-      toast({
-        title: "Login Failed",
-        description: error.message,
-        variant: "destructive",
+        title: "Login Error",
+        description: "Invalid email or password",
+        variant: "destructive"
       });
       throw error;
     }
-  };
+  }, [navigate, toast]);
 
-  const register = async (email: string, password: string, userData: any) => {
+  const register = useCallback(async (email: string, password: string, userData: any) => {
     try {
-      const user = await registerUser(email, password, userData);
-      toast({
-        title: "Registration Successful",
-        description: "Your account has been created.",
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      
+      // Store additional user data in Firestore
+      await setDoc(doc(db, "users", user.uid), {
+        ...userData,
+        createdAt: new Date(),
       });
-      navigate("/dashboard");
-    } catch (error: any) {
-      toast({
-        title: "Registration Failed",
-        description: error.message,
-        variant: "destructive",
-      });
-      throw error;
-    }
-  };
 
-  const logout = async () => {
-    try {
-      await logoutUser();
+      navigate('/dashboard');
+    } catch (error) {
       toast({
-        title: "Logged Out",
-        description: "You have been successfully logged out.",
-      });
-      navigate("/auth?mode=login");
-    } catch (error: any) {
-      toast({
-        title: "Logout Failed",
-        description: error.message,
-        variant: "destructive",
+        title: "Registration Error",
+        description: "Failed to create account",
+        variant: "destructive"
       });
       throw error;
     }
-  };
+  }, [navigate, toast]);
+
+  const logout = useCallback(async () => {
+    try {
+      await signOut(auth);
+      navigate('/auth?mode=login');
+    } catch (error) {
+      toast({
+        title: "Logout Error",
+        description: "Failed to sign out",
+        variant: "destructive"
+      });
+      throw error;
+    }
+  }, [navigate, toast]);
+
+  const value = useMemo(() => ({
+    user,
+    loading,
+    login,
+    register,
+    logout,
+  }), [user, loading, login, register, logout]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
-      {!loading && children}
+    <AuthContext.Provider value={value}>
+      {children}
     </AuthContext.Provider>
   );
 };

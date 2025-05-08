@@ -1,10 +1,10 @@
 import React from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
+import { User as FirebaseUser } from "firebase/auth";
 import {
   Menu, X, ShoppingCart, UserCircle, LogOut
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
@@ -14,13 +14,29 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger,
 } from "@/components/ui/sheet";
 
+// Extend Firebase User type
+interface ExtendedUser extends FirebaseUser {
+  role?: 'admin' | 'doctor' | 'patient';
+}
+
+const getDashboardPath = (user: ExtendedUser | null) => {
+  if (!user) return '/dashboard';
+  switch (user.role) {
+    case 'admin':
+      return '/admin-portal';
+    case 'doctor':
+      return '/doctor-portal';
+    default:
+      return '/dashboard';
+  }
+};
+
 const Navbar = () => {
   const [isOpen, setIsOpen] = React.useState(false);
   const [scrolled, setScrolled] = React.useState(false);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const { toast } = useToast();
 
   React.useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 10);
@@ -47,9 +63,7 @@ const Navbar = () => {
   const authLinks = user ? [
     {
       name: 'Dashboard',
-      path: user.role === 'admin' ? '/admin-portal' : 
-            user.role === 'doctor' ? '/doctor-portal' : 
-            '/dashboard'
+      path: getDashboardPath(user as ExtendedUser)
     },
     { name: 'Profile', path: '/profile' },
   ] : [];

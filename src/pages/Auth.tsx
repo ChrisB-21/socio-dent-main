@@ -1,5 +1,4 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useMemo } from "react";
 import {
   FaUser,
   FaUserMd,
@@ -36,7 +35,6 @@ const Auth = () => {
   const [captchaInput, setCaptchaInput] = useState("");
   const [captchaVerified, setCaptchaVerified] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const navigate = useNavigate();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -49,6 +47,10 @@ const Auth = () => {
 
   const handleCaptchaVerify = () => {
     setCaptchaVerified(captchaInput.trim() === captcha.trim());
+  };
+
+  const handleForgotPassword = () => {
+    alert("Forgot password functionality is not implemented yet");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -74,8 +76,6 @@ const Auth = () => {
           await register(form.email, form.password, userData);
         }
       } else {
-        // Phone authentication would be implemented here
-        // For now, we'll show an alert
         alert("Phone authentication is not implemented yet");
       }
     } catch (error) {
@@ -84,6 +84,12 @@ const Auth = () => {
       setIsLoading(false);
     }
   };
+
+  const buttonColorClass = useMemo(() => {
+    if (loginTab === "user") return "bg-red-400 hover:bg-red-500";
+    if (loginTab === "doctor") return "bg-sociodent-500 hover:bg-sociodent-600";
+    return "bg-gray-700 hover:bg-gray-800";
+  }, [loginTab]);
 
   return (
     <AuthLayout>
@@ -136,7 +142,7 @@ const Auth = () => {
       <form onSubmit={handleSubmit} className="space-y-4">
         {!window.location.search.includes("mode=login") && (
           <div>
-            <label className="block text-gray-700 mb-2 text-sm font-medium">
+            <label htmlFor="name" className="block text-gray-700 mb-2 text-sm font-medium">
               Full Name
             </label>
             <div className="relative">
@@ -144,6 +150,7 @@ const Auth = () => {
                 <FaUser />
               </span>
               <input
+                id="name"
                 name="name"
                 type="text"
                 value={form.name}
@@ -158,7 +165,7 @@ const Auth = () => {
 
         {loginMethod === "email" && (
           <div>
-            <label className="block text-gray-700 mb-2 text-sm font-medium">
+            <label htmlFor="email" className="block text-gray-700 mb-2 text-sm font-medium">
               Email Address
             </label>
             <div className="relative">
@@ -166,6 +173,7 @@ const Auth = () => {
                 <FaEnvelope />
               </span>
               <input
+                id="email"
                 name="email"
                 type="email"
                 value={form.email}
@@ -180,7 +188,7 @@ const Auth = () => {
 
         {loginMethod === "phone" && (
           <div>
-            <label className="block text-gray-700 mb-2 text-sm font-medium">
+            <label htmlFor="phone" className="block text-gray-700 mb-2 text-sm font-medium">
               Phone Number
             </label>
             <div className="relative">
@@ -188,6 +196,7 @@ const Auth = () => {
                 <FaPhone />
               </span>
               <input
+                id="phone"
                 name="phone"
                 type="tel"
                 value={form.phone}
@@ -202,17 +211,22 @@ const Auth = () => {
 
         <div>
           <div className="flex justify-between items-center mb-1">
-            <label className="block text-gray-700 text-sm font-medium">
+            <label htmlFor="password" className="block text-gray-700 text-sm font-medium">
               Password
             </label>
             {window.location.search.includes("mode=login") && (
-              <a href="#" className="text-sociodent-500 text-xs hover:underline">
-                Forgot password?
-              </a>
+              <button
+                type="button"
+                className="text-sociodent-500 text-xs hover:underline"
+                onClick={handleForgotPassword}
+              >
+                Forgot your password?
+              </button>
             )}
           </div>
           <div className="relative">
             <input
+              id="password"
               name="password"
               type={showPassword ? "text" : "password"}
               value={form.password}
@@ -221,33 +235,38 @@ const Auth = () => {
               placeholder="Password"
               required
             />
-            <span
-              className="absolute right-3 top-3 text-gray-400 cursor-pointer"
+            <button
+              type="button"
+              className="absolute right-3 top-3 text-gray-400"
               onClick={() => setShowPassword((s) => !s)}
+              onKeyDown={(e) => e.key === "Enter" && setShowPassword((s) => !s)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
             >
               {showPassword ? <FaEyeSlash /> : <FaEye />}
-            </span>
+            </button>
           </div>
         </div>
 
         <div className="bg-gray-50 border rounded-md p-3">
-          <label className="block text-gray-700 mb-1 text-sm font-medium">
-            Verify you're human
+          <label htmlFor="captcha" className="block text-gray-700 mb-1 text-sm font-medium">
+            Enter Captcha
           </label>
           <div className="flex items-center mb-2">
             <div className="flex-1 flex items-center justify-between px-3 py-2 bg-white border rounded font-mono tracking-widest text-lg select-none">
               <span>{captcha}</span>
-              <span
-                className="ml-2 text-sociodent-500 cursor-pointer"
+              <button
+                type="button"
+                className="ml-2 text-sociodent-500"
                 onClick={handleCaptchaRefresh}
-                title="Refresh Captcha"
+                aria-label="Refresh Captcha"
               >
                 <FaSyncAlt />
-              </span>
+              </button>
             </div>
           </div>
           <div className="flex items-center">
             <input
+              id="captcha"
               type="text"
               className="flex-1 px-3 py-2 border rounded-l focus:ring-2 focus:ring-sociodent-500"
               placeholder="Enter the code above"
@@ -274,18 +293,13 @@ const Auth = () => {
         <SubmitButton
           type="submit"
           disabled={isLoading}
-          className={`w-full py-3 mt-2 rounded-full text-white font-bold text-lg ${
-            loginTab === "user"
-              ? "bg-red-400 hover:bg-red-500"
-              : loginTab === "doctor"
-              ? "bg-sociodent-500 hover:bg-sociodent-600"
-              : "bg-gray-700 hover:bg-gray-800"
-          } transition`}
+          className={`w-full py-3 mt-2 rounded-full text-white font-bold text-lg ${buttonColorClass} transition`}
         >
-          {isLoading ? "Processing..." : 
-            window.location.search.includes("mode=login")
-              ? `Sign In as ${loginTab.charAt(0).toUpperCase() + loginTab.slice(1)}`
-              : `Create ${loginTab.charAt(0).toUpperCase() + loginTab.slice(1)} Account`}
+          {isLoading
+            ? "Processing..."
+            : window.location.search.includes("mode=login")
+            ? `Sign In as ${loginTab.charAt(0).toUpperCase() + loginTab.slice(1)}`
+            : `Create ${loginTab.charAt(0).toUpperCase() + loginTab.slice(1)} Account`}
         </SubmitButton>
       </form>
     </AuthLayout>

@@ -36,6 +36,17 @@ const Dashboard = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const getStatusStyle = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'bg-green-100 text-green-800';
+      case 'cancelled':
+        return 'bg-red-100 text-red-800';
+      default:
+        return 'bg-yellow-100 text-yellow-800';
+    }
+  };
+
   useEffect(() => {
     if (!user) {
       navigate('/auth?mode=login');
@@ -139,15 +150,7 @@ const Dashboard = () => {
                             <h3 className="font-medium">{appointment.doctorName}</h3>
                             <p className="text-sm text-gray-500">{appointment.date} at {appointment.time}</p>
                           </div>
-                          <span className={`px-3 py-1 rounded-full text-sm ${
-                            appointment.status === 'confirmed' 
-                              ? 'bg-green-100 text-green-800'
-                              : appointment.status === 'completed'
-                              ? 'bg-blue-100 text-blue-800'
-                              : appointment.status === 'cancelled'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-yellow-100 text-yellow-800'
-                          }`}>
+                          <span className={`px-2 py-1 text-sm rounded-full ${getStatusStyle(appointment.status)}`}>
                             {appointment.status}
                           </span>
                         </div>
